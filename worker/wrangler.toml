@@ -1,21 +1,31 @@
 # Cellar Worker Configuration
-# TODO: Configure with actual values
 
 name = "cellar-worker"
 main = "src/index.ts"
-compatibility_date = "2024-01-01"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
 
 # D1 Database
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "cellar"
-# database_id = "<your-database-id>"
+[[d1_databases]]
+binding = "DB"
+database_name = "cellar"
+database_id = "YOUR_DATABASE_ID_HERE"  # Run: wrangler d1 create cellar
 
 # R2 Bucket
-# [[r2_buckets]]
-# binding = "R2_BUCKET"
-# bucket_name = "grove-storage"
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "grove-storage"  # Run: wrangler r2 bucket create grove-storage
 
 # Cron Triggers
-# [triggers]
-# crons = ["0 3 * * *"]  # Daily at 3 AM UTC
+[triggers]
+crons = ["0 3 * * *"]  # Daily at 3 AM UTC
+
+# Environment-specific settings
+[env.production]
+name = "cellar-worker"
+routes = [
+  { pattern = "cellar-api.grove.place/*", zone_name = "grove.place" }
+]
+
+[env.staging]
+name = "cellar-worker-staging"

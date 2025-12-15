@@ -1,21 +1,878 @@
-// Cellar Cloudflare Worker
-// TODO: Implement worker entry point
+/**
+ * Cellar Cloudflare Worker
+ * API endpoints for storage management
+ */
 
 export interface Env {
   DB: D1Database;
   R2_BUCKET: R2Bucket;
-  // Add other bindings as needed
+  HEARTWOOD_API_KEY?: string;
+  STRIPE_SECRET_KEY?: string;
 }
 
+// Types
+interface UserStorage {
+  user_id: string;
+  tier_gb: number;
+  additional_gb: number;
+  used_bytes: number;
+  updated_at: string;
+}
+
+interface StorageFile {
+  id: string;
+  user_id: string;
+  r2_key: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  product: string;
+  category: string;
+  parent_id?: string;
+  metadata?: string;
+  created_at: string;
+  deleted_at?: string;
+}
+
+interface CronLogEntry {
+  job: string;
+  status: 'started' | 'completed' | 'failed';
+  timestamp: string;
+  duration_ms?: number;
+  items_processed?: number;
+  bytes_freed?: number;
+  errors?: string[];
+}
+
+// Constants
+const CRON_CONFIG = {
+  trashRetentionDays: 30,
+  exportRetentionDays: 7,
+  batchSize: {
+    trash: 100,
+    exports: 50
+  }
+};
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+};
+
+// Helpers
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...CORS_HEADERS
+    }
+  });
+}
+
+function error(message: string, status = 400): Response {
+  return json({ error: message }, status);
+}
+
+function logCronEvent(entry: CronLogEntry): void {
+  console.log(
+    JSON.stringify({
+      ...entry,
+      service: 'cellar',
+      environment: 'production'
+    })
+  );
+}
+
+function generateId(): string {
+  return crypto.randomUUID();
+}
+
+// Router
+type RouteHandler = (
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  params: Record<string, string>
+) => Promise<Response>;
+
+interface Route {
+  method: string;
+  pattern: RegExp;
+  handler: RouteHandler;
+}
+
+const routes: Route[] = [];
+
+function route(method: string, path: string, handler: RouteHandler) {
+  const pattern = new RegExp(
+    '^' + path.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$'
+  );
+  routes.push({ method, pattern, handler });
+}
+
+async function handleRequest(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext
+): Promise<Response> {
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const method = request.method;
+
+  // Handle CORS preflight
+  if (method === 'OPTIONS') {
+    return new Response(null, { headers: CORS_HEADERS });
+  }
+
+  // Find matching route
+  for (const r of routes) {
+    if (r.method !== method) continue;
+    const match = path.match(r.pattern);
+    if (match) {
+      const params = match.groups || {};
+      try {
+        return await r.handler(request, env, ctx, params);
+      } catch (err) {
+        console.error('Route handler error:', err);
+        return error('Internal server error', 500);
+      }
+    }
+  }
+
+  return error('Not found', 404);
+}
+
+// Auth middleware (stub - integrate with Heartwood)
+async function getAuthUser(
+  request: Request,
+  env: Env
+): Promise<{ id: string; tier: string } | null> {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  // TODO: Validate token with Heartwood
+  // For now, extract user from token (mock)
+  const token = authHeader.slice(7);
+
+  // In production, validate with Heartwood API
+  // const response = await fetch('https://heartwood.grove.place/api/validate', {
+  //   headers: { 'Authorization': `Bearer ${token}` }
+  // });
+
+  // Mock user for development
+  return { id: 'user_123', tier: 'oak' };
+}
+
+// Storage helpers
+const TIER_STORAGE: Record<string, number> = {
+  free: 0,
+  seedling: 1,
+  sapling: 5,
+  oak: 20,
+  evergreen: 100
+};
+
+const GB_IN_BYTES = 1024 * 1024 * 1024;
+
+function calculateQuotaStatus(storage: UserStorage) {
+  const totalGb = storage.tier_gb + storage.additional_gb;
+  const totalBytes = totalGb * GB_IN_BYTES;
+  const usedGb = storage.used_bytes / GB_IN_BYTES;
+  const percentage = totalBytes > 0 ? (storage.used_bytes / totalBytes) * 100 : 0;
+
+  let warningLevel: 'none' | 'warning' | 'critical' | 'full' = 'none';
+  if (percentage >= 100) warningLevel = 'full';
+  else if (percentage >= 95) warningLevel = 'critical';
+  else if (percentage >= 80) warningLevel = 'warning';
+
+  return {
+    tier_gb: storage.tier_gb,
+    additional_gb: storage.additional_gb,
+    total_gb: totalGb,
+    used_bytes: storage.used_bytes,
+    used_gb: Number(usedGb.toFixed(2)),
+    available_bytes: Math.max(0, totalBytes - storage.used_bytes),
+    percentage: Number(percentage.toFixed(1)),
+    warning_level: warningLevel
+  };
+}
+
+// ============== API ROUTES ==============
+
+// GET /api/storage - Get quota and usage info
+route('GET', '/api/storage', async (request, env) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  let storage = await env.DB.prepare(
+    'SELECT * FROM user_storage WHERE user_id = ?'
+  )
+    .bind(user.id)
+    .first<UserStorage>();
+
+  if (!storage) {
+    // Create storage record for new user
+    const tierGb = TIER_STORAGE[user.tier] || 0;
+    await env.DB.prepare(
+      `INSERT INTO user_storage (user_id, tier_gb, additional_gb, used_bytes)
+       VALUES (?, ?, 0, 0)`
+    )
+      .bind(user.id, tierGb)
+      .run();
+
+    storage = {
+      user_id: user.id,
+      tier_gb: tierGb,
+      additional_gb: 0,
+      used_bytes: 0,
+      updated_at: new Date().toISOString()
+    };
+  }
+
+  // Get usage breakdown
+  const breakdown = await env.DB.prepare(
+    `SELECT product, category,
+            SUM(size_bytes) as bytes,
+            COUNT(*) as file_count
+     FROM storage_files
+     WHERE user_id = ? AND deleted_at IS NULL
+     GROUP BY product, category`
+  )
+    .bind(user.id)
+    .all();
+
+  return json({
+    quota: calculateQuotaStatus(storage),
+    breakdown: breakdown.results
+  });
+});
+
+// GET /api/storage/files - List files with pagination
+route('GET', '/api/storage/files', async (request, env) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  const url = new URL(request.url);
+  const product = url.searchParams.get('product');
+  const category = url.searchParams.get('category');
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
+  const offset = parseInt(url.searchParams.get('offset') || '0');
+  const sortBy = url.searchParams.get('sort') || 'created_at';
+  const sortOrder = url.searchParams.get('order') || 'desc';
+  const search = url.searchParams.get('search');
+
+  const conditions = ['user_id = ?', 'deleted_at IS NULL'];
+  const params: (string | number)[] = [user.id];
+
+  if (product) {
+    conditions.push('product = ?');
+    params.push(product);
+  }
+
+  if (category) {
+    conditions.push('category = ?');
+    params.push(category);
+  }
+
+  if (search) {
+    conditions.push('filename LIKE ?');
+    params.push(`%${search}%`);
+  }
+
+  const whereClause = conditions.join(' AND ');
+  const validSorts = ['created_at', 'size_bytes', 'filename'];
+  const sort = validSorts.includes(sortBy) ? sortBy : 'created_at';
+  const order = sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+  // Get total count
+  const countResult = await env.DB.prepare(
+    `SELECT COUNT(*) as count FROM storage_files WHERE ${whereClause}`
+  )
+    .bind(...params)
+    .first<{ count: number }>();
+
+  // Get files
+  const filesResult = await env.DB.prepare(
+    `SELECT * FROM storage_files
+     WHERE ${whereClause}
+     ORDER BY ${sort} ${order}
+     LIMIT ? OFFSET ?`
+  )
+    .bind(...params, limit, offset)
+    .all<StorageFile>();
+
+  return json({
+    files: filesResult.results.map((f) => ({
+      ...f,
+      metadata: f.metadata ? JSON.parse(f.metadata) : null
+    })),
+    total: countResult?.count || 0,
+    limit,
+    offset
+  });
+});
+
+// GET /api/storage/files/:id - Get single file
+route('GET', '/api/storage/files/:id', async (request, env, ctx, params) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  const file = await env.DB.prepare(
+    'SELECT * FROM storage_files WHERE id = ? AND user_id = ?'
+  )
+    .bind(params.id, user.id)
+    .first<StorageFile>();
+
+  if (!file) return error('File not found', 404);
+
+  return json({
+    ...file,
+    metadata: file.metadata ? JSON.parse(file.metadata) : null
+  });
+});
+
+// DELETE /api/storage/files/:id - Move file to trash
+route('DELETE', '/api/storage/files/:id', async (request, env, ctx, params) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  const file = await env.DB.prepare(
+    'SELECT * FROM storage_files WHERE id = ? AND user_id = ? AND deleted_at IS NULL'
+  )
+    .bind(params.id, user.id)
+    .first<StorageFile>();
+
+  if (!file) return error('File not found', 404);
+
+  await env.DB.prepare(
+    `UPDATE storage_files SET deleted_at = datetime('now') WHERE id = ?`
+  )
+    .bind(params.id)
+    .run();
+
+  return json({ success: true, message: 'File moved to trash' });
+});
+
+// POST /api/storage/files/:id/restore - Restore from trash
+route(
+  'POST',
+  '/api/storage/files/:id/restore',
+  async (request, env, ctx, params) => {
+    const user = await getAuthUser(request, env);
+    if (!user) return error('Unauthorized', 401);
+
+    const file = await env.DB.prepare(
+      'SELECT * FROM storage_files WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL'
+    )
+      .bind(params.id, user.id)
+      .first<StorageFile>();
+
+    if (!file) return error('File not found in trash', 404);
+
+    await env.DB.prepare(
+      'UPDATE storage_files SET deleted_at = NULL WHERE id = ?'
+    )
+      .bind(params.id)
+      .run();
+
+    return json({ success: true, message: 'File restored' });
+  }
+);
+
+// GET /api/storage/trash - List trash files
+route('GET', '/api/storage/trash', async (request, env) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  const result = await env.DB.prepare(
+    `SELECT * FROM storage_files
+     WHERE user_id = ? AND deleted_at IS NOT NULL
+     ORDER BY deleted_at DESC`
+  )
+    .bind(user.id)
+    .all<StorageFile>();
+
+  // Calculate total trash size
+  const totalSize = result.results.reduce((sum, f) => sum + f.size_bytes, 0);
+
+  return json({
+    files: result.results.map((f) => ({
+      ...f,
+      metadata: f.metadata ? JSON.parse(f.metadata) : null
+    })),
+    total_size: totalSize
+  });
+});
+
+// DELETE /api/storage/trash - Empty trash
+route('DELETE', '/api/storage/trash', async (request, env) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  // Get all trash files
+  const trashFiles = await env.DB.prepare(
+    'SELECT * FROM storage_files WHERE user_id = ? AND deleted_at IS NOT NULL'
+  )
+    .bind(user.id)
+    .all<StorageFile>();
+
+  let deletedCount = 0;
+  let freedBytes = 0;
+
+  for (const file of trashFiles.results) {
+    try {
+      // Delete from R2
+      await env.R2_BUCKET.delete(file.r2_key);
+
+      // Delete from DB
+      await env.DB.prepare('DELETE FROM storage_files WHERE id = ?')
+        .bind(file.id)
+        .run();
+
+      deletedCount++;
+      freedBytes += file.size_bytes;
+    } catch (err) {
+      console.error(`Failed to delete file ${file.id}:`, err);
+    }
+  }
+
+  // Update user storage
+  if (freedBytes > 0) {
+    await env.DB.prepare(
+      `UPDATE user_storage
+       SET used_bytes = MAX(0, used_bytes - ?)
+       WHERE user_id = ?`
+    )
+      .bind(freedBytes, user.id)
+      .run();
+  }
+
+  return json({
+    success: true,
+    deleted_count: deletedCount,
+    freed_bytes: freedBytes
+  });
+});
+
+// DELETE /api/storage/trash/:id - Permanently delete single file
+route(
+  'DELETE',
+  '/api/storage/trash/:id',
+  async (request, env, ctx, params) => {
+    const user = await getAuthUser(request, env);
+    if (!user) return error('Unauthorized', 401);
+
+    const file = await env.DB.prepare(
+      'SELECT * FROM storage_files WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL'
+    )
+      .bind(params.id, user.id)
+      .first<StorageFile>();
+
+    if (!file) return error('File not found in trash', 404);
+
+    // Delete from R2
+    await env.R2_BUCKET.delete(file.r2_key);
+
+    // Delete from DB
+    await env.DB.prepare('DELETE FROM storage_files WHERE id = ?')
+      .bind(params.id)
+      .run();
+
+    // Update user storage
+    await env.DB.prepare(
+      `UPDATE user_storage
+       SET used_bytes = MAX(0, used_bytes - ?)
+       WHERE user_id = ?`
+    )
+      .bind(file.size_bytes, user.id)
+      .run();
+
+    return json({
+      success: true,
+      freed_bytes: file.size_bytes
+    });
+  }
+);
+
+// POST /api/storage/export - Start export job
+route('POST', '/api/storage/export', async (request, env) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  const body = await request.json<{
+    type: 'full' | 'blog' | 'ivy' | 'category';
+    filters?: Record<string, string>;
+  }>();
+
+  if (!body.type) {
+    return error('Export type is required');
+  }
+
+  // Check for existing pending export
+  const existingExport = await env.DB.prepare(
+    `SELECT * FROM storage_exports
+     WHERE user_id = ? AND status IN ('pending', 'processing')`
+  )
+    .bind(user.id)
+    .first();
+
+  if (existingExport) {
+    return error('An export is already in progress', 409);
+  }
+
+  const exportId = generateId();
+
+  await env.DB.prepare(
+    `INSERT INTO storage_exports
+     (id, user_id, status, export_type, filter_params)
+     VALUES (?, ?, 'pending', ?, ?)`
+  )
+    .bind(
+      exportId,
+      user.id,
+      body.type,
+      body.filters ? JSON.stringify(body.filters) : null
+    )
+    .run();
+
+  // TODO: Trigger export processing via Durable Object or Queue
+
+  return json({
+    export_id: exportId,
+    status: 'pending',
+    message: 'Export job created. You will receive an email when ready.'
+  });
+});
+
+// GET /api/storage/export/:id - Get export status
+route('GET', '/api/storage/export/:id', async (request, env, ctx, params) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  const exp = await env.DB.prepare(
+    'SELECT * FROM storage_exports WHERE id = ? AND user_id = ?'
+  )
+    .bind(params.id, user.id)
+    .first();
+
+  if (!exp) return error('Export not found', 404);
+
+  return json(exp);
+});
+
+// GET /api/storage/export/:id/download - Get download URL
+route(
+  'GET',
+  '/api/storage/export/:id/download',
+  async (request, env, ctx, params) => {
+    const user = await getAuthUser(request, env);
+    if (!user) return error('Unauthorized', 401);
+
+    const exp = await env.DB.prepare(
+      `SELECT * FROM storage_exports
+       WHERE id = ? AND user_id = ? AND status = 'completed'`
+    )
+      .bind(params.id, user.id)
+      .first<{ r2_key: string; expires_at: string }>();
+
+    if (!exp) return error('Export not found or not ready', 404);
+
+    // Check if expired
+    if (exp.expires_at && new Date(exp.expires_at) < new Date()) {
+      return error('Export has expired', 410);
+    }
+
+    // Generate signed URL (R2 presigned URL)
+    // Note: This requires additional setup for signed URLs
+    // For now, return the R2 key for direct access
+    return json({
+      download_url: `/api/storage/download/${exp.r2_key}`,
+      expires_at: exp.expires_at
+    });
+  }
+);
+
+// GET /api/storage/addons - List available and purchased add-ons
+route('GET', '/api/storage/addons', async (request, env) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  const userAddons = await env.DB.prepare(
+    'SELECT * FROM storage_addons WHERE user_id = ? AND active = 1'
+  )
+    .bind(user.id)
+    .all();
+
+  return json({
+    available: [
+      { type: 'storage_10gb', gb: 10, price_cents: 100, price_display: '$1/mo' },
+      { type: 'storage_50gb', gb: 50, price_cents: 400, price_display: '$4/mo' },
+      {
+        type: 'storage_100gb',
+        gb: 100,
+        price_cents: 700,
+        price_display: '$7/mo'
+      }
+    ],
+    purchased: userAddons.results
+  });
+});
+
+// POST /api/storage/addons - Purchase add-on (initiate Stripe checkout)
+route('POST', '/api/storage/addons', async (request, env) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  const body = await request.json<{
+    addon_type: 'storage_10gb' | 'storage_50gb' | 'storage_100gb';
+  }>();
+
+  const addonConfig: Record<string, { gb: number; price_cents: number }> = {
+    storage_10gb: { gb: 10, price_cents: 100 },
+    storage_50gb: { gb: 50, price_cents: 400 },
+    storage_100gb: { gb: 100, price_cents: 700 }
+  };
+
+  const addon = addonConfig[body.addon_type];
+  if (!addon) {
+    return error('Invalid addon type');
+  }
+
+  // TODO: Create Stripe checkout session
+  // const stripe = new Stripe(env.STRIPE_SECRET_KEY);
+  // const session = await stripe.checkout.sessions.create({...});
+
+  // For now, return placeholder
+  return json({
+    message: 'Stripe integration pending',
+    addon_type: body.addon_type,
+    redirect_url: '/checkout/placeholder'
+  });
+});
+
+// DELETE /api/storage/addons/:id - Cancel add-on
+route('DELETE', '/api/storage/addons/:id', async (request, env, ctx, params) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  const addon = await env.DB.prepare(
+    'SELECT * FROM storage_addons WHERE id = ? AND user_id = ? AND active = 1'
+  )
+    .bind(params.id, user.id)
+    .first<{ gb_amount: number }>();
+
+  if (!addon) return error('Addon not found', 404);
+
+  // Cancel addon
+  await env.DB.prepare(
+    `UPDATE storage_addons
+     SET active = 0, cancelled_at = datetime('now')
+     WHERE id = ?`
+  )
+    .bind(params.id)
+    .run();
+
+  // Update user storage
+  await env.DB.prepare(
+    `UPDATE user_storage
+     SET additional_gb = MAX(0, additional_gb - ?)
+     WHERE user_id = ?`
+  )
+    .bind(addon.gb_amount, user.id)
+    .run();
+
+  // TODO: Cancel Stripe subscription item
+
+  return json({
+    success: true,
+    message: 'Addon will be cancelled at end of billing period'
+  });
+});
+
+// GET /api/storage/download/:key - Download file
+route('GET', '/api/storage/download/:key', async (request, env, ctx, params) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  // Verify user owns the file
+  const file = await env.DB.prepare(
+    'SELECT * FROM storage_files WHERE r2_key = ? AND user_id = ?'
+  )
+    .bind(params.key, user.id)
+    .first<StorageFile>();
+
+  if (!file) return error('File not found', 404);
+
+  // Get file from R2
+  const object = await env.R2_BUCKET.get(file.r2_key);
+  if (!object) return error('File not found in storage', 404);
+
+  const headers = new Headers();
+  headers.set('Content-Type', file.mime_type);
+  headers.set(
+    'Content-Disposition',
+    `attachment; filename="${file.filename}"`
+  );
+  headers.set('Content-Length', file.size_bytes.toString());
+
+  return new Response(object.body, { headers });
+});
+
+// ============== CRON HANDLERS ==============
+
+async function deleteExpiredTrash(env: Env): Promise<void> {
+  const startTime = Date.now();
+  const errors: string[] = [];
+  let itemsDeleted = 0;
+  let bytesFreed = 0;
+
+  logCronEvent({
+    job: 'trash_cleanup',
+    status: 'started',
+    timestamp: new Date().toISOString()
+  });
+
+  try {
+    const cutoffDate = new Date(
+      Date.now() - CRON_CONFIG.trashRetentionDays * 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const expired = await env.DB.prepare(
+      `SELECT id, user_id, r2_key, size_bytes
+       FROM storage_files
+       WHERE deleted_at IS NOT NULL AND deleted_at < ?
+       LIMIT ?`
+    )
+      .bind(cutoffDate, CRON_CONFIG.batchSize.trash)
+      .all<{ id: string; user_id: string; r2_key: string; size_bytes: number }>();
+
+    for (const file of expired.results) {
+      try {
+        await env.R2_BUCKET.delete(file.r2_key);
+        await env.DB.prepare('DELETE FROM storage_files WHERE id = ?')
+          .bind(file.id)
+          .run();
+        await env.DB.prepare(
+          `UPDATE user_storage
+           SET used_bytes = MAX(0, used_bytes - ?)
+           WHERE user_id = ?`
+        )
+          .bind(file.size_bytes, file.user_id)
+          .run();
+
+        itemsDeleted++;
+        bytesFreed += file.size_bytes;
+      } catch (err) {
+        errors.push(`Failed to delete file ${file.id}: ${err}`);
+      }
+    }
+
+    logCronEvent({
+      job: 'trash_cleanup',
+      status: 'completed',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      items_processed: itemsDeleted,
+      bytes_freed: bytesFreed,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (err) {
+    logCronEvent({
+      job: 'trash_cleanup',
+      status: 'failed',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      errors: [String(err)]
+    });
+    throw err;
+  }
+}
+
+async function deleteExpiredExports(env: Env): Promise<void> {
+  const startTime = Date.now();
+  const errors: string[] = [];
+  let itemsDeleted = 0;
+
+  logCronEvent({
+    job: 'export_cleanup',
+    status: 'started',
+    timestamp: new Date().toISOString()
+  });
+
+  try {
+    const expired = await env.DB.prepare(
+      `SELECT id, r2_key
+       FROM storage_exports
+       WHERE status = 'completed' AND expires_at < datetime('now')
+       LIMIT ?`
+    )
+      .bind(CRON_CONFIG.batchSize.exports)
+      .all<{ id: string; r2_key: string }>();
+
+    for (const exp of expired.results) {
+      try {
+        if (exp.r2_key) {
+          // Delete export files from R2
+          const prefix = exp.r2_key.replace(/\/[^/]+$/, '/');
+          const list = await env.R2_BUCKET.list({ prefix });
+          for (const obj of list.objects) {
+            await env.R2_BUCKET.delete(obj.key);
+          }
+        }
+
+        await env.DB.prepare('DELETE FROM storage_exports WHERE id = ?')
+          .bind(exp.id)
+          .run();
+        itemsDeleted++;
+      } catch (err) {
+        errors.push(`Failed to delete export ${exp.id}: ${err}`);
+      }
+    }
+
+    logCronEvent({
+      job: 'export_cleanup',
+      status: 'completed',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      items_processed: itemsDeleted,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (err) {
+    logCronEvent({
+      job: 'export_cleanup',
+      status: 'failed',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      errors: [String(err)]
+    });
+    throw err;
+  }
+}
+
+// ============== EXPORTS ==============
+
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // TODO: Implement request handling
-    return new Response('Cellar API', { status: 200 });
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext
+  ): Promise<Response> {
+    return handleRequest(request, env, ctx);
   },
 
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    // TODO: Implement cron handlers
-    // - Trash cleanup (daily 3 AM UTC)
-    // - Export cleanup (daily 3 AM UTC)
-  },
+  async scheduled(
+    event: ScheduledEvent,
+    env: Env,
+    ctx: ExecutionContext
+  ): Promise<void> {
+    // Run both cleanup jobs at 3 AM UTC
+    if (event.cron === '0 3 * * *') {
+      ctx.waitUntil(deleteExpiredTrash(env));
+      ctx.waitUntil(deleteExpiredExports(env));
+    }
+  }
 };
