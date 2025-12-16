@@ -1,6 +1,6 @@
 <script lang="ts">
 	import {
-		Gem,
+		Vault,
 		LayoutDashboard,
 		Folder,
 		Trash2,
@@ -69,7 +69,7 @@
 	let { name, size = 20, class: className = '' }: Props = $props();
 
 	const iconMap = {
-		amber: Gem,
+		amber: Vault,
 		dashboard: LayoutDashboard,
 		folder: Folder,
 		trash: Trash2,
