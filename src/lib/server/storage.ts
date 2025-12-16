@@ -1,6 +1,6 @@
 /**
  * Storage Service
- * Core business logic for Cellar storage management
+ * Core business logic for Amber storage management
  */
 
 import type {

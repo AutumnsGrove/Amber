@@ -1,6 +1,6 @@
-# Cellar Worker Configuration
+# Amber Worker Configuration
 
-name = "cellar-worker"
+name = "amber-worker"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
@@ -8,8 +8,8 @@ compatibility_flags = ["nodejs_compat"]
 # D1 Database
 [[d1_databases]]
 binding = "DB"
-database_name = "cellar"
-database_id = "YOUR_DATABASE_ID_HERE"  # Run: wrangler d1 create cellar
+database_name = "amber"
+database_id = "YOUR_DATABASE_ID_HERE"  # Run: wrangler d1 create amber
 
 # R2 Bucket
 [[r2_buckets]]
@@ -22,10 +22,10 @@ crons = ["0 3 * * *"]  # Daily at 3 AM UTC
 
 # Environment-specific settings
 [env.production]
-name = "cellar-worker"
+name = "amber-worker"
 routes = [
-  { pattern = "cellar-api.grove.place/*", zone_name = "grove.place" }
+  { pattern = "amber-api.grove.place/*", zone_name = "grove.place" }
 ]
 
 [env.staging]
-name = "cellar-worker-staging"
+name = "amber-worker-staging"

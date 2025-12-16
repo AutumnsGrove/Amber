@@ -1,4 +1,4 @@
-// Cellar Type Definitions
+// Amber Type Definitions
 // TODO: Define types as implementation progresses
 
 export interface UserStorage {

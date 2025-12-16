@@ -1,5 +1,5 @@
 /**
- * Cellar Cloudflare Worker
+ * Amber Cloudflare Worker
  * API endpoints for storage management
  */
 
@@ -79,7 +79,7 @@ function logCronEvent(entry: CronLogEntry): void {
   console.log(
     JSON.stringify({
       ...entry,
-      service: 'cellar',
+      service: 'amber',
       environment: 'production'
     })
   );

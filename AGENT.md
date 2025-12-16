@@ -5,7 +5,7 @@
 ---
 
 ## Project Purpose
-Cellar is Grove's unified storage management system. Every file users upload—blog images, email attachments, profile pictures—lives in the same root cellar, organized and accessible from one place. It provides visibility into storage usage, file management, bulk exports, and storage add-on purchases.
+Amber is Grove's unified storage management system. Every file users upload—blog images, email attachments, profile pictures—is preserved in Amber, organized and accessible from one place. It provides visibility into storage usage, file management, bulk exports, and storage add-on purchases.
 
 ## Tech Stack
 - **Language:** TypeScript
