@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import FileGrid from '$lib/components/FileGrid.svelte';
 	import FileList from '$lib/components/FileList.svelte';
 	import Icon from '$lib/components/Icons.svelte';
@@ -12,6 +12,7 @@
 	let error = $state<string | null>(null);
 	let files = $state<StorageFile[]>([]);
 	let totalFiles = $state(0);
+	let initialized = $state(false);
 
 	// UI state
 	let viewMode = $state<'grid' | 'list'>('grid');
@@ -77,16 +78,24 @@
 		}
 	}
 
-	// Reload when filters change
+	// Reload when filters change (but not on initial load)
 	$effect(() => {
-		const _ = [$searchQuery, productFilter, sortBy, sortOrder];
-		if (!loading) {
+		// Track these dependencies
+		const query = $searchQuery;
+		const product = productFilter;
+		const sort = sortBy;
+		const order = sortOrder;
+
+		// Only reload if already initialized
+		if (untrack(() => initialized)) {
 			loadData();
 		}
 	});
 
 	onMount(() => {
-		loadData();
+		loadData().then(() => {
+			initialized = true;
+		});
 	});
 </script>
 
