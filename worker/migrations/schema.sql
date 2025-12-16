@@ -1,4 +1,4 @@
--- Cellar Database Schema
+-- Amber Database Schema
 -- Cloudflare D1 (SQLite)
 
 -- User storage quotas and usage

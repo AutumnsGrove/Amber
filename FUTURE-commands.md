@@ -9,13 +9,13 @@ These commands require local execution with wrangler authenticated.
 pnpm install
 
 # 2. Create D1 database
-wrangler d1 create cellar
+wrangler d1 create amber
 
 # 3. Update wrangler.toml with the database_id from the output above
 # Look for: database_id = "your-database-id-here"
 
 # 4. Run database migrations
-wrangler d1 execute cellar --file=./worker/migrations/schema.sql
+wrangler d1 execute amber --file=./worker/migrations/schema.sql
 
 # 5. Create R2 bucket
 wrangler r2 bucket create grove-storage
@@ -56,13 +56,13 @@ wrangler pages deploy .svelte-kit/cloudflare
 
 ```bash
 # Run migrations on remote D1
-wrangler d1 execute cellar --file=./worker/migrations/schema.sql --remote
+wrangler d1 execute amber --file=./worker/migrations/schema.sql --remote
 
 # Query database locally
-wrangler d1 execute cellar --command="SELECT * FROM user_storage LIMIT 10"
+wrangler d1 execute amber --command="SELECT * FROM user_storage LIMIT 10"
 
 # Query remote database
-wrangler d1 execute cellar --remote --command="SELECT * FROM user_storage LIMIT 10"
+wrangler d1 execute amber --remote --command="SELECT * FROM user_storage LIMIT 10"
 ```
 
 ## R2 Operations

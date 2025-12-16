@@ -1,5 +1,5 @@
 /**
- * Cellar API Client
+ * Amber API Client
  * Frontend API wrapper for storage operations
  */
 

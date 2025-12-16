@@ -1,4 +1,4 @@
-# Cellar - Project TODOs
+# Amber - Project TODOs
 
 ## Phase 1: Foundation (MVP)
 
@@ -115,4 +115,4 @@ See `FUTURE-commands.md` for commands to run locally with wrangler.
 
 ---
 
-*Reference: [cellar-spec.md](./cellar-spec.md) for full specification*
+*Reference: [amber-spec.md](./amber-spec.md) for full specification*

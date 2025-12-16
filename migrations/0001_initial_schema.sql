@@ -1,5 +1,5 @@
--- Cellar Initial Schema
--- Reference: cellar-spec.md
+-- Amber Initial Schema
+-- Reference: amber-spec.md
 
 -- User storage quotas and usage
 CREATE TABLE IF NOT EXISTS user_storage (

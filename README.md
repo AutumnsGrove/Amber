@@ -1,20 +1,20 @@
-# Cellar
+# Amber
 
 Grove's unified storage management system.
 
 ## Overview
 
-Cellar is the storage layer that already exists in Grove—made visible and manageable. Every file you upload—blog images, email attachments, profile pictures—lives in the same root cellar, organized and accessible from one place.
+Amber is the storage layer that already exists in Grove—made visible and manageable. Every file you upload—blog images, email attachments, profile pictures—is preserved in Amber, organized and accessible from one place.
 
 | | |
 |---|---|
-| **Public name** | Cellar |
+| **Public name** | Amber |
 | **Internal codename** | GroveStorage |
-| **Domain** | cellar.grove.place |
+| **Domain** | amber.grove.place |
 
 ## Philosophy
 
-Cellar isn't trying to be Dropbox or Google Drive. It's the storage layer that already exists in Grove—made visible and manageable. Every paid user already has storage; Cellar is how they understand and control it.
+Amber isn't trying to be Dropbox or Google Drive. It's the storage layer that already exists in Grove—made visible and manageable. Every paid user already has storage; Amber is how they understand and control it.
 
 - See what's using your space
 - Download and export your data
@@ -54,7 +54,7 @@ Cellar isn't trying to be Dropbox or Google Drive. It's the storage layer that a
 ## Project Structure
 
 ```
-Cellar/
+Amber/
 ├── src/
 │   ├── lib/                    # Shared utilities
 │   │   ├── components/         # Svelte components
@@ -109,13 +109,13 @@ pnpm deploy:worker
 
 ## Documentation
 
-- [Project Spec](./cellar-spec.md) - Full specification
+- [Project Spec](./amber-spec.md) - Full specification
 - [AGENT.md](./AGENT.md) - Agent instructions
 - [AgentUsage/](./AgentUsage/) - Development guides
 
 ## Related Grove Products
 
-Cellar provides storage management for:
+Amber provides storage management for:
 - **Blog** - Images, markdown content, custom fonts
 - **Ivy** - Email bodies, attachments
 - **Profile** - Avatar, banner images

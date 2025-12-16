@@ -149,13 +149,13 @@
 </script>
 
 <svelte:head>
-  <title>Cellar - Storage Management</title>
+  <title>Amber - Storage Management</title>
 </svelte:head>
 
 <div class="dashboard">
   <header class="header">
     <div>
-      <h1 class="text-2xl font-bold">Cellar</h1>
+      <h1 class="text-2xl font-bold">Amber</h1>
       <p class="text-gray-600">Your Grove storage, organized</p>
     </div>
     <div class="header-actions">
