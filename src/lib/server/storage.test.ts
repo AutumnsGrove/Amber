@@ -275,7 +275,8 @@ describe('Storage Service', () => {
     });
 
     it('should be case-insensitive', () => {
-      expect(getMimeType('photo.JPG')).toBe('application/octet-stream'); // Only lowercase supported
+      expect(getMimeType('photo.JPG')).toBe('image/jpeg');
+      expect(getMimeType('video.MP4')).toBe('video/mp4');
     });
   });
 

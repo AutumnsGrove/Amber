@@ -6,8 +6,8 @@
 - [x] Initialize SvelteKit project with pnpm
 - [x] Configure Cloudflare adapter for SvelteKit
 - [x] Set up Cloudflare Worker project (wrangler)
-- [ ] Create D1 database and initial migrations *(run locally with wrangler)*
-- [ ] Configure R2 bucket bindings *(run locally with wrangler)*
+- [x] Create D1 database and initial migrations
+- [x] Configure R2 bucket bindings
 - [ ] Set up Heartwood auth integration *(pending credentials)*
 
 ### Database Schema

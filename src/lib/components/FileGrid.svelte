@@ -69,7 +69,13 @@
           onclick={() => onSelect?.(file)}
           onkeypress={(e) => e.key === 'Enter' && onSelect?.(file)}
         >
-          <div class="file-preview" onclick|stopPropagation={() => onPreview?.(file)}>
+          <div
+            class="file-preview"
+            role="button"
+            tabindex="0"
+            onclick={(e) => { e.stopPropagation(); onPreview?.(file); }}
+            onkeypress={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onPreview?.(file); } }}
+          >
             {#if isImage(file.mime_type)}
               <div class="image-placeholder">
                 <span class="text-3xl">{getFileIcon(file.mime_type)}</span>
@@ -94,14 +100,14 @@
             <button
               class="action-btn"
               title="Download"
-              onclick|stopPropagation={() => onDownload?.(file)}
+              onclick={(e) => { e.stopPropagation(); onDownload?.(file); }}
             >
               ⬇️
             </button>
             <button
               class="action-btn danger"
               title="Delete"
-              onclick|stopPropagation={() => onDelete?.(file)}
+              onclick={(e) => { e.stopPropagation(); onDelete?.(file); }}
             >
               🗑️
             </button>

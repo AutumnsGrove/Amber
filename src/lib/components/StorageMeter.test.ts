@@ -19,8 +19,7 @@ describe('StorageMeter', () => {
     render(StorageMeter, { props: { quota: baseQuota } });
 
     expect(screen.getByText('Storage')).toBeInTheDocument();
-    expect(screen.getByText(/5 GB/)).toBeInTheDocument();
-    expect(screen.getByText(/20 GB/)).toBeInTheDocument();
+    expect(screen.getByText(/5 GB \/ 20 GB/)).toBeInTheDocument();
   });
 
   it('should display percentage used', () => {

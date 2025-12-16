@@ -31,7 +31,7 @@ vi.mock('$app/stores', () => {
 });
 
 vi.mock('$app/environment', () => ({
-  browser: false,
+  browser: true,
   dev: true,
   building: false,
   version: 'test'
