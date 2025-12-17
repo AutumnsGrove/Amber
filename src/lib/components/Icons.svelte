@@ -28,7 +28,8 @@
 		RefreshCw,
 		Share,
 		Plus,
-		HardDrive
+		HardDrive,
+		Menu
 	} from 'lucide-svelte';
 
 	interface Props {
@@ -61,7 +62,8 @@
 			| 'refresh'
 			| 'export'
 			| 'plus'
-			| 'storage';
+			| 'storage'
+			| 'menu';
 		size?: number;
 		class?: string;
 	}
@@ -97,7 +99,8 @@
 		refresh: RefreshCw,
 		export: Share,
 		plus: Plus,
-		storage: HardDrive
+		storage: HardDrive,
+		menu: Menu
 	};
 
 	const IconComponent = iconMap[name];
