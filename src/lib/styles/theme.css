@@ -109,7 +109,19 @@
 
 	/* Layout */
 	--sidebar-width: 260px;
+	--sidebar-width-mobile: 280px;
 	--header-height: 56px;
+
+	/* Breakpoints (for reference - use in media queries) */
+	/* Mobile: max-width: 768px */
+	/* Tablet: max-width: 1024px */
+}
+
+/* Mobile breakpoint */
+@media (max-width: 768px) {
+	:root {
+		--sidebar-width: var(--sidebar-width-mobile);
+	}
 }
 
 /* Light Theme */

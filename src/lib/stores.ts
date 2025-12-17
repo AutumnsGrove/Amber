@@ -15,5 +15,5 @@ export const currentUser = writable<{
 // Search query store
 export const searchQuery = writable('');
 
-// Sidebar collapsed state (for mobile/responsive)
-export const sidebarCollapsed = writable(false);
+// Sidebar open state (for mobile navigation)
+export const sidebarOpen = writable(false);
