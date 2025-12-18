@@ -8,9 +8,9 @@ import { browser } from '$app/environment';
 
 const API_BASE = '/api/storage';
 
-// Use mock data in development when backend isn't running
-// Set to false to connect to real API
-const USE_MOCK_DATA = browser && import.meta.env.DEV;
+// Use mock data until the worker API is deployed
+// TODO: Set to false once worker is live at amber-api.grove.place
+const USE_MOCK_DATA = true;
 
 interface ApiResponse<T> {
   data?: T;
