@@ -2,18 +2,45 @@
  * Amber Cloudflare Worker
  * API endpoints for storage management
  *
- * Uses direct API calls for auth validation
+ * Uses GroveAuth client for authentication
  */
+
+import { createGroveAuthClient } from '@autumnsgrove/groveengine/dist/groveauth/client.js';
 
 export interface Env {
   DB: D1Database;
   R2_BUCKET: R2Bucket;
   // GroveAuth (Heartwood) credentials
+  GROVEAUTH_CLIENT_ID?: string;
+  GROVEAUTH_CLIENT_SECRET?: string;
   GROVEAUTH_AUTH_BASE_URL?: string;
+  GROVEAUTH_REDIRECT_URI?: string;
   // CORS
   ALLOWED_ORIGINS?: string;
   // Stripe (deferred)
   STRIPE_SECRET_KEY?: string;
+}
+
+/**
+ * Create a GroveAuth client instance from environment variables.
+ * Memoized per env (client reused across requests).
+ */
+function getGroveAuthClient(env: Env) {
+  const clientId = env.GROVEAUTH_CLIENT_ID || 'amber';
+  const clientSecret = env.GROVEAUTH_CLIENT_SECRET;
+  const authBaseUrl = env.GROVEAUTH_AUTH_BASE_URL || 'https://auth-api.grove.place';
+  const redirectUri = env.GROVEAUTH_REDIRECT_URI || 'https://amber.grove.place/auth/callback';
+
+  if (!clientSecret) {
+    throw new Error('GROVEAUTH_CLIENT_SECRET environment variable is required');
+  }
+
+  return createGroveAuthClient({
+    clientId,
+    clientSecret,
+    authBaseUrl,
+    redirectUri,
+  });
 }
 
 // Subscription tier type
@@ -233,34 +260,23 @@ async function getAuthUser(
   }
 
   const token = authHeader.slice(7);
-  const authBaseUrl = env.GROVEAUTH_AUTH_BASE_URL || 'https://auth-api.grove.place';
 
   try {
-    // Verify the token with GroveAuth
-    const verifyResponse = await fetch(`${authBaseUrl}/verify`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-
-    if (!verifyResponse.ok) {
-      return null;
-    }
-
-    const tokenInfo: TokenInfo = await verifyResponse.json();
-    if (!tokenInfo.active || !tokenInfo.sub) {
+    const client = getGroveAuthClient(env);
+    const tokenInfo = await client.verifyToken(token);
+    if (!tokenInfo?.active || !tokenInfo.sub) {
       return null;
     }
 
     // Get user's subscription to determine their tier
-    const subResponse = await fetch(`${authBaseUrl}/users/${tokenInfo.sub}/subscription`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-
-    if (!subResponse.ok) {
+    let subscription;
+    try {
+      subscription = await client.getSubscription(token);
+    } catch (err) {
       // Default to seedling if subscription check fails
+      console.warn('Subscription check failed, defaulting to seedling:', err);
       return { id: tokenInfo.sub, tier: 'seedling' };
     }
-
-    const subscription: SubscriptionResponse = await subResponse.json();
 
     return {
       id: tokenInfo.sub,
