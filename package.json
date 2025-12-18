@@ -41,7 +41,7 @@
     "wrangler": "^3.0.0"
   },
   "dependencies": {
-    "@autumnsgrove/groveengine": "^0.6.3",
+    "@autumnsgrove/groveengine": "^0.6.4",
     "@cloudflare/workers-types": "^4.0.0",
     "@lucide/svelte": "^0.562.0",
     "bits-ui": "^2.14.4",
