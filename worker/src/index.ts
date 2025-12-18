@@ -1,7 +1,19 @@
 /**
  * Amber Cloudflare Worker
  * API endpoints for storage management
+ *
+ * Uses @autumnsgrove/groveengine for database utilities
  */
+
+import {
+  generateId,
+  now,
+  queryOne,
+  queryMany,
+  execute,
+  count
+} from '@autumnsgrove/groveengine/services';
+import { formatBytes } from '@autumnsgrove/groveengine/utils';
 
 export interface Env {
   DB: D1Database;
@@ -85,9 +97,7 @@ function logCronEvent(entry: CronLogEntry): void {
   );
 }
 
-function generateId(): string {
-  return crypto.randomUUID();
-}
+// generateId imported from @autumnsgrove/groveengine/services
 
 // Router
 type RouteHandler = (
@@ -208,46 +218,51 @@ route('GET', '/api/storage', async (request, env) => {
   const user = await getAuthUser(request, env);
   if (!user) return error('Unauthorized', 401);
 
-  let storage = await env.DB.prepare(
-    'SELECT * FROM user_storage WHERE user_id = ?'
-  )
-    .bind(user.id)
-    .first<UserStorage>();
+  let storage = await queryOne<UserStorage>(
+    env.DB,
+    'SELECT * FROM user_storage WHERE user_id = ?',
+    [user.id]
+  );
 
   if (!storage) {
     // Create storage record for new user
     const tierGb = TIER_STORAGE[user.tier] || 0;
-    await env.DB.prepare(
+    await execute(
+      env.DB,
       `INSERT INTO user_storage (user_id, tier_gb, additional_gb, used_bytes)
-       VALUES (?, ?, 0, 0)`
-    )
-      .bind(user.id, tierGb)
-      .run();
+       VALUES (?, ?, 0, 0)`,
+      [user.id, tierGb]
+    );
 
     storage = {
       user_id: user.id,
       tier_gb: tierGb,
       additional_gb: 0,
       used_bytes: 0,
-      updated_at: new Date().toISOString()
+      updated_at: now()
     };
   }
 
   // Get usage breakdown
-  const breakdown = await env.DB.prepare(
+  const breakdown = await queryMany<{
+    product: string;
+    category: string;
+    bytes: number;
+    file_count: number;
+  }>(
+    env.DB,
     `SELECT product, category,
             SUM(size_bytes) as bytes,
             COUNT(*) as file_count
      FROM storage_files
      WHERE user_id = ? AND deleted_at IS NULL
-     GROUP BY product, category`
-  )
-    .bind(user.id)
-    .all();
+     GROUP BY product, category`,
+    [user.id]
+  );
 
   return json({
     quota: calculateQuotaStatus(storage),
-    breakdown: breakdown.results
+    breakdown
   });
 });
 

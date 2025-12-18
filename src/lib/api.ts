@@ -4,11 +4,13 @@
  */
 
 import type { StorageFile, QuotaStatus, UsageBreakdown, StorageExport } from '$types';
+import { browser } from '$app/environment';
 
 const API_BASE = '/api/storage';
 
-// Use mock data when no backend is available
-const USE_MOCK_DATA = true;
+// Use mock data in development when backend isn't running
+// Set to false to connect to real API
+const USE_MOCK_DATA = browser && import.meta.env.DEV;
 
 interface ApiResponse<T> {
   data?: T;

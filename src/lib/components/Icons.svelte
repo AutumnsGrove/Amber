@@ -103,7 +103,7 @@
 		menu: Menu
 	};
 
-	const IconComponent = iconMap[name];
+	const IconComponent = $derived(iconMap[name]);
 </script>
 
 {#if IconComponent}

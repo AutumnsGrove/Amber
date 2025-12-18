@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { page } from '$app/stores';
 	import Icon from '$lib/components/Icons.svelte';
+	import { Logo } from '@autumnsgrove/groveengine/ui';
 	import { theme, currentUser, searchQuery, sidebarOpen } from '$lib/stores';
 
 	let { children }: { children: Snippet } = $props();
@@ -63,7 +64,7 @@
 	<aside class="sidebar" class:open={$sidebarOpen}>
 		<div class="sidebar-header">
 			<a href="/" class="logo">
-				<Icon name="amber" size={24} />
+				<Logo class="w-6 h-6" color="var(--color-primary)" />
 				<span class="logo-text">Amber</span>
 			</a>
 			<button class="sidebar-close-btn" onclick={closeSidebar} title="Close menu">

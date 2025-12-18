@@ -21,6 +21,7 @@ export interface StorageFile {
   parent_id?: string;
   metadata?: Record<string, unknown>;
   created_at: string;
+  updated_at?: string;
   deleted_at?: string;
 }
 
@@ -58,11 +59,12 @@ export interface UsageBreakdown {
 }
 
 export interface QuotaStatus {
-  tier_gb: number;
-  additional_gb: number;
+  tier_gb?: number;
+  additional_gb?: number;
   total_gb: number;
+  total_bytes?: number;
   used_bytes: number;
-  used_gb: number;
+  used_gb?: number;
   available_bytes: number;
   percentage: number;
   warning_level: 'none' | 'warning' | 'critical' | 'full';
