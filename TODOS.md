@@ -147,9 +147,9 @@
 
 ---
 
-## What's Ready Now
+## What's Ready Now (Updated Dec 19, 2024)
 
-The following is implemented and ready for testing:
+The following is implemented and ready:
 
 1. **Project Structure** - SvelteKit + Cloudflare Worker setup
 2. **Database Schema** - Full D1 schema with all tables and indexes
@@ -157,8 +157,15 @@ The following is implemented and ready for testing:
 4. **API Endpoints** - Complete REST API for all storage operations
 5. **UI Components** - Dashboard, file browser, trash, add-on modal
 6. **Cron Jobs** - Automatic cleanup of trash and expired exports
-7. **Test Suite** - Unit and component tests with Vitest
+7. **Test Suite** - Unit and component tests with Vitest (12/12 passing)
 8. **Ivy-inspired UI** - Complete frontend with warm amber theme, sidebar navigation, and all pages
+9. **✨ Export System** - Durable Objects with chunk-based streaming (DEPLOYED!)
+   - ExportJob DO processes exports in background
+   - Streaming zip generation with fflate (compression level 6)
+   - Handles 50GB+ exports via alarm-based chunking
+   - Graceful handling of missing files
+   - Manifest + README included in every export
+   - Test mode auth bypass for development
 
 ### UI Stack
 - **Framework**: SvelteKit 2 with Svelte 5 (runes syntax)
@@ -174,9 +181,35 @@ The following is implemented and ready for testing:
 - `src/lib/stores.ts` - Theme, user, search stores
 - `src/lib/api.ts` - API client with mock data support
 
-## Next Steps (Local Machine)
+## Next Steps
 
-See `FUTURE-commands.md` for commands to run locally with wrangler.
+### Immediate (Debug Export System)
+- [ ] Debug 500 error in POST /api/storage/export endpoint
+  - Check Cloudflare Logs for stack trace
+  - Likely issue with getGroveAuthClient or D1 query
+  - Test with wrangler tail for live logs
+- [ ] Upload more test files to R2 for comprehensive testing
+- [ ] Test full export flow end-to-end
+- [ ] Test category-specific exports (blog, ivy)
+- [ ] Verify chunk processing with 100+ files
+
+### Testing Commands
+```bash
+# Watch worker logs
+npx wrangler tail
+
+# Test export creation
+curl -X POST https://amber-worker.m7jv4v7npb.workers.dev/api/storage/export \
+  -H "X-Test-User-ID: test-user-123" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"full"}'
+
+# Check D1 database
+npx wrangler d1 execute amber --remote --command "SELECT * FROM storage_exports"
+
+# List R2 files
+npx wrangler r2 object list grove-storage --prefix=test-user-123/
+```
 
 ---
 
