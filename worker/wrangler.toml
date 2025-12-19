@@ -16,6 +16,17 @@ database_id = "f688021b-a986-495a-94bb-352354768a22"
 binding = "R2_BUCKET"
 bucket_name = "grove-storage"  # Run: wrangler r2 bucket create grove-storage
 
+# Durable Objects
+[[durable_objects.bindings]]
+name = "EXPORT_JOBS"
+class_name = "ExportJob"
+script_name = "amber-worker"
+
+# Migrations (required for first DO deployment)
+[[migrations]]
+tag = "v1"
+new_classes = ["ExportJob"]
+
 # Cron Triggers
 [triggers]
 crons = ["0 3 * * *"]  # Daily at 3 AM UTC

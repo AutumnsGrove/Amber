@@ -100,9 +100,15 @@ describe('FileGrid', () => {
   it('should display correct icon for different file types', () => {
     render(FileGrid, { props: { files: mockFiles } });
 
-    // Image files should show image icon
-    expect(screen.getAllByText('🖼️')).toHaveLength(1);
-    // PDF files should show document icon
-    expect(screen.getAllByText('📄')).toHaveLength(1);
+    // Component now uses Lucide SVG icons instead of emojis
+    // Each file card should have an SVG icon in the icon-placeholder container
+    const fileCards = document.querySelectorAll('.file-card');
+    expect(fileCards).toHaveLength(2);
+
+    // Each file card should contain an SVG icon
+    fileCards.forEach((card) => {
+      const icon = card.querySelector('.icon-placeholder svg');
+      expect(icon).toBeInTheDocument();
+    });
   });
 });

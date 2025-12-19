@@ -10,6 +10,7 @@ import { createGroveAuthClient } from '@autumnsgrove/groveengine/dist/groveauth/
 export interface Env {
   DB: D1Database;
   R2_BUCKET: R2Bucket;
+  EXPORT_JOBS: DurableObjectNamespace;
   // GroveAuth (Heartwood) credentials
   GROVEAUTH_CLIENT_ID?: string;
   GROVEAUTH_CLIENT_SECRET?: string;
@@ -665,7 +666,12 @@ route('POST', '/api/storage/export', async (request, env) => {
     )
     .run();
 
-  // TODO: Trigger export processing via Durable Object or Queue
+  // Trigger export processing via Durable Object
+  const doId = env.EXPORT_JOBS.idFromName(exportId);
+  const doStub = env.EXPORT_JOBS.get(doId);
+
+  // Start export in background (non-blocking)
+  ctx.waitUntil(doStub.startExport(exportId));
 
   return json({
     export_id: exportId,
@@ -712,12 +718,11 @@ route(
       return error('Export has expired', 410);
     }
 
-    // Generate signed URL (R2 presigned URL)
-    // Note: This requires additional setup for signed URLs
-    // For now, return the R2 key for direct access
     return json({
-      download_url: `/api/storage/download/${exp.r2_key}`,
-      expires_at: exp.expires_at
+      download_url: `/api/storage/download-export/${exp.r2_key}`,
+      expires_at: exp.expires_at,
+      size_bytes: exp.size_bytes,
+      file_count: exp.file_count
     });
   }
 );
@@ -844,6 +849,41 @@ route('GET', '/api/storage/download/:key', async (request, env, ctx, params) => 
     `attachment; filename="${file.filename}"`
   );
   headers.set('Content-Length', file.size_bytes.toString());
+
+  return new Response(object.body, { headers });
+});
+
+// GET /api/storage/download-export/:key - Download export zip
+route('GET', '/api/storage/download-export/:key', async (request, env, ctx, params) => {
+  const user = await getAuthUser(request, env);
+  if (!user) return error('Unauthorized', 401);
+
+  // Verify user owns this export
+  const exp = await env.DB.prepare(
+    `SELECT * FROM storage_exports
+     WHERE r2_key = ? AND user_id = ? AND status = 'completed'`
+  )
+    .bind(params.key, user.id)
+    .first<{ r2_key: string; expires_at: string }>();
+
+  if (!exp) return error('Export not found', 404);
+
+  // Check expiration
+  if (exp.expires_at && new Date(exp.expires_at) < new Date()) {
+    return error('Export has expired', 410);
+  }
+
+  // Stream from R2
+  const object = await env.R2_BUCKET.get(exp.r2_key);
+  if (!object) return error('Export file not found', 404);
+
+  const headers = new Headers();
+  headers.set('Content-Type', 'application/zip');
+  headers.set(
+    'Content-Disposition',
+    `attachment; filename="grove-export-${exp.r2_key.split('/').pop()}"`
+  );
+  headers.set('Content-Length', object.size.toString());
 
   return new Response(object.body, { headers });
 });
@@ -1002,3 +1042,6 @@ export default {
     }
   }
 };
+
+// Export Durable Object class
+export { ExportJob } from './services/ExportJob';

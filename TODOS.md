@@ -45,11 +45,23 @@
 
 ### Export System
 - [x] Create export job queue
-- [ ] Implement streamed zip generation (Durable Objects) *(complex, later)*
+- [x] Implement streamed zip generation (Durable Objects)
 - [x] Add full export option (all files)
 - [x] Add category export option
+- [x] Generate download URLs (authenticated, 7-day expiry)
 - [ ] Set up export email notifications *(needs email service)*
-- [ ] Generate signed download URLs (7-day expiry) *(needs R2 setup)*
+- [ ] R2 presigned URLs (Phase 3 enhancement)
+
+### GroveEngine R2 Integration
+- [ ] Extract R2 upload utilities to GroveEngine (`@autumnsgrove/groveengine`)
+  - streamToR2(key, stream, metadata) - Stream upload to R2
+  - generatePresignedUrl(key, expiresIn) - Generate time-limited URLs
+  - batchDelete(prefix) - Delete multiple R2 objects by prefix
+  - File upload handler (multipart/form-data)
+  - File size validation (max 100MB per file)
+  - MIME type validation
+  - Virus/malware scanning stubs (implement later)
+- [ ] Bump GroveEngine version in Amber and pull in R2 utils
 
 ### Storage Add-ons
 - [ ] Create Stripe products for add-ons (+10GB, +50GB, +100GB) *(needs Stripe)*

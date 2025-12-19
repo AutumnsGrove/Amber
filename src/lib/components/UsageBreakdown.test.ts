@@ -30,9 +30,20 @@ describe('UsageBreakdown', () => {
   it('should display product icons', () => {
     render(UsageBreakdown, { props: { breakdown: mockBreakdown, totalBytes } });
 
-    expect(screen.getByText('📝')).toBeInTheDocument(); // Blog
-    expect(screen.getByText('📧')).toBeInTheDocument(); // Ivy
-    expect(screen.getByText('👤')).toBeInTheDocument(); // Profile
+    // Component now uses Lucide SVG icons via Icon component
+    // Check that product rows exist with their data-product attributes
+    const blogRow = document.querySelector('[data-product="blog"]');
+    const ivyRow = document.querySelector('[data-product="ivy"]');
+    const profileRow = document.querySelector('[data-product="profile"]');
+
+    expect(blogRow).toBeInTheDocument();
+    expect(ivyRow).toBeInTheDocument();
+    expect(profileRow).toBeInTheDocument();
+
+    // Each product row should have an SVG icon
+    expect(blogRow?.querySelector('svg')).toBeInTheDocument();
+    expect(ivyRow?.querySelector('svg')).toBeInTheDocument();
+    expect(profileRow?.querySelector('svg')).toBeInTheDocument();
   });
 
   it('should aggregate categories under products', () => {

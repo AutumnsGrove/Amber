@@ -1,5 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// Mock $app/environment to ensure browser is false (forces real API calls, not mock data)
+vi.mock('$app/environment', () => ({
+  browser: false,
+  dev: false,
+  building: false,
+  version: 'test'
+}));
+
 import * as api from './api';
+
+// Mock the base URL used by the API client
+const WORKER_API_BASE = 'https://amber-api.grove.place/api/storage';
 
 describe('API Client', () => {
   const originalFetch = global.fetch;
@@ -45,9 +57,9 @@ describe('API Client', () => {
       expect(result.data).toEqual(mockData);
       expect(result.error).toBeUndefined();
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage',
+        `${WORKER_API_BASE}`,
         expect.objectContaining({
-          headers: { 'Content-Type': 'application/json' }
+          headers: expect.objectContaining({ 'Content-Type': 'application/json' })
         })
       );
     });
@@ -92,7 +104,7 @@ describe('API Client', () => {
 
       expect(result.data).toEqual(mockFiles);
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/files',
+        `${WORKER_API_BASE}/files`,
         expect.any(Object)
       );
     });
@@ -111,7 +123,7 @@ describe('API Client', () => {
       });
 
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/files?product=blog&category=images&search=photo&sort=size_bytes&order=desc&limit=20&offset=10',
+        `${WORKER_API_BASE}/files?product=blog&category=images&search=photo&sort=size_bytes&order=desc&limit=20&offset=10`,
         expect.any(Object)
       );
     });
@@ -131,7 +143,7 @@ describe('API Client', () => {
 
       expect(result.data).toEqual(mockFile);
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/files/file_123',
+        `${WORKER_API_BASE}/files/file_123`,
         expect.any(Object)
       );
     });
@@ -153,7 +165,7 @@ describe('API Client', () => {
 
       expect(result.data?.success).toBe(true);
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/files/file_123',
+        `${WORKER_API_BASE}/files/file_123`,
         expect.objectContaining({ method: 'DELETE' })
       );
     });
@@ -167,7 +179,7 @@ describe('API Client', () => {
 
       expect(result.data?.success).toBe(true);
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/files/file_123/restore',
+        `${WORKER_API_BASE}/files/file_123/restore`,
         expect.objectContaining({ method: 'POST' })
       );
     });
@@ -188,7 +200,7 @@ describe('API Client', () => {
 
       expect(result.data).toEqual(mockTrash);
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/trash',
+        `${WORKER_API_BASE}/trash`,
         expect.any(Object)
       );
     });
@@ -203,7 +215,7 @@ describe('API Client', () => {
       expect(result.data?.success).toBe(true);
       expect(result.data?.deleted_count).toBe(5);
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/trash',
+        `${WORKER_API_BASE}/trash`,
         expect.objectContaining({ method: 'DELETE' })
       );
     });
@@ -217,7 +229,7 @@ describe('API Client', () => {
 
       expect(result.data?.success).toBe(true);
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/trash/file_123',
+        `${WORKER_API_BASE}/trash/file_123`,
         expect.objectContaining({ method: 'DELETE' })
       );
     });
@@ -236,7 +248,7 @@ describe('API Client', () => {
       expect(result.data?.export_id).toBe('export_abc');
       expect(result.data?.status).toBe('pending');
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/export',
+        `${WORKER_API_BASE}/export`,
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ type: 'full' })
@@ -253,7 +265,7 @@ describe('API Client', () => {
       });
 
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/export',
+        `${WORKER_API_BASE}/export`,
         expect.objectContaining({
           body: JSON.stringify({
             type: 'category',
@@ -325,7 +337,7 @@ describe('API Client', () => {
 
       expect(result.data?.redirect_url).toBeDefined();
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/addons',
+        `${WORKER_API_BASE}/addons`,
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ addon_type: 'storage_50gb' })
@@ -345,7 +357,7 @@ describe('API Client', () => {
 
       expect(result.data?.success).toBe(true);
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/storage/addons/addon_123',
+        `${WORKER_API_BASE}/addons/addon_123`,
         expect.objectContaining({ method: 'DELETE' })
       );
     });
@@ -355,7 +367,7 @@ describe('API Client', () => {
     it('should generate download URL', () => {
       const url = api.getDownloadUrl('user_123/blog/images/photo.jpg');
 
-      expect(url).toBe('/api/storage/download/user_123%2Fblog%2Fimages%2Fphoto.jpg');
+      expect(url).toBe(`${WORKER_API_BASE}/download/user_123%2Fblog%2Fimages%2Fphoto.jpg`);
     });
   });
 });

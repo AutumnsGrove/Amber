@@ -1,0 +1,200 @@
+import { Zip, AsyncZipDeflate, ZipPassThrough } from 'fflate';
+
+/**
+ * ZIP streaming configuration constants
+ */
+export const ZIP_CONFIG = {
+  COMPRESSION_LEVEL: 6,
+  CHUNK_SIZE_BYTES: 50 * 1024 * 1024, // 50MB
+  CHUNK_FILE_LIMIT: 100,
+} as const;
+
+/**
+ * Entry representing a file to be added to the ZIP archive
+ */
+export interface ZipFileEntry {
+  filename: string;
+  data: ReadableStream<Uint8Array>;
+  size: number;
+  mtime?: Date;
+}
+
+/**
+ * Entry representing metadata about a file in the manifest
+ */
+export interface ManifestEntry {
+  filename: string;
+  size: number;
+  r2_key: string;
+  product: string;
+  category: string;
+}
+
+/**
+ * Streams files into a ZIP archive with support for large files
+ * Handles both binary streams and text content
+ */
+export class ZipStreamer {
+  private zip: Zip;
+  private outputStream: WritableStream<Uint8Array>;
+  private writer: WritableStreamDefaultWriter<Uint8Array>;
+  private fileCount: number = 0;
+
+  constructor(outputStream: WritableStream<Uint8Array>) {
+    this.outputStream = outputStream;
+    this.writer = outputStream.getWriter();
+
+    // Initialize fflate Zip with callback to write chunks
+    this.zip = new Zip(async (error, data) => {
+      if (error) {
+        throw new Error(`ZIP compression error: ${error.message}`);
+      }
+      if (data) {
+        await this.writer.write(data);
+      }
+    });
+  }
+
+  /**
+   * Add a file from a ReadableStream to the ZIP archive
+   * Supports large files by streaming data through AsyncZipDeflate
+   */
+  async addFile(entry: ZipFileEntry): Promise<void> {
+    if (this.fileCount >= ZIP_CONFIG.CHUNK_FILE_LIMIT) {
+      throw new Error(
+        `File limit exceeded: ${ZIP_CONFIG.CHUNK_FILE_LIMIT} files per ZIP`,
+      );
+    }
+
+    const asyncDeflate = new AsyncZipDeflate(entry.filename, {
+      level: ZIP_CONFIG.COMPRESSION_LEVEL,
+      mtime: entry.mtime?.getTime(),
+    });
+
+    this.zip.add(asyncDeflate);
+
+    const reader = entry.data.getReader();
+    let totalSize = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        totalSize += value.length;
+        if (totalSize > entry.size) {
+          throw new Error(
+            `Stream size exceeded declared size for ${entry.filename}`,
+          );
+        }
+
+        // Push data to the async deflate stream
+        await new Promise<void>((resolve, reject) => {
+          asyncDeflate.push(value, false, (error) => {
+            if (error) reject(error);
+            else resolve();
+          });
+        });
+      }
+
+      // Finalize the file entry
+      await new Promise<void>((resolve, reject) => {
+        asyncDeflate.push(new Uint8Array(), true, (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+
+      this.fileCount++;
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  /**
+   * Add a text file to the ZIP archive
+   * Useful for metadata files like manifest.json or README.txt
+   */
+  async addTextFile(filename: string, content: string): Promise<void> {
+    if (this.fileCount >= ZIP_CONFIG.CHUNK_FILE_LIMIT) {
+      throw new Error(
+        `File limit exceeded: ${ZIP_CONFIG.CHUNK_FILE_LIMIT} files per ZIP`,
+      );
+    }
+
+    const encoder = new TextEncoder();
+    const data = encoder.encode(content);
+
+    const passthrough = new ZipPassThrough(filename, {
+      mtime: new Date(),
+    });
+
+    this.zip.add(passthrough);
+    passthrough.push(data);
+    passthrough.push(new Uint8Array());
+
+    this.fileCount++;
+  }
+
+  /**
+   * Finalize the ZIP archive and close the output stream
+   * Must be called after all files have been added
+   */
+  async close(): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      this.zip.end((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+
+    await this.writer.close();
+  }
+}
+
+/**
+ * Generate manifest.json content from manifest entries
+ * Returns a stringified JSON representation of the manifest
+ */
+export function createManifest(entries: ManifestEntry[]): string {
+  const manifest = {
+    version: '1.0',
+    created: new Date().toISOString(),
+    files: entries.map((entry) => ({
+      filename: entry.filename,
+      size: entry.size,
+      r2_key: entry.r2_key,
+      product: entry.product,
+      category: entry.category,
+    })),
+    summary: {
+      totalFiles: entries.length,
+      totalSize: entries.reduce((sum, e) => sum + e.size, 0),
+    },
+  };
+
+  return JSON.stringify(manifest, null, 2);
+}
+
+/**
+ * Generate README.txt content with archive information
+ * Provides user-friendly documentation about the ZIP contents
+ */
+export function createReadme(): string {
+  return `Amber Export Archive
+=====================
+
+This archive contains exported data from the Amber system.
+
+Contents:
+- manifest.json: Complete file manifest with metadata
+- Product data and associated files organized by category
+
+Extraction:
+Simply extract this archive using your preferred ZIP tool.
+
+Created: ${new Date().toISOString()}
+
+For more information, visit: https://amber.autumnsgrove.dev
+`;
+}
