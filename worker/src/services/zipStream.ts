@@ -1,10 +1,10 @@
-import { Zip, AsyncZipDeflate, ZipPassThrough } from 'fflate';
+import { Zip, ZipDeflate, ZipPassThrough } from 'fflate';
 
 /**
  * ZIP streaming configuration constants
  */
 export const ZIP_CONFIG = {
-  COMPRESSION_LEVEL: 6,
+  COMPRESSION_LEVEL: 0, // Store only (no compression) - faster for CF Workers CPU limits
   CHUNK_SIZE_BYTES: 50 * 1024 * 1024, // 50MB
   CHUNK_FILE_LIMIT: 100,
 } as const;
@@ -57,7 +57,7 @@ export class ZipStreamer {
 
   /**
    * Add a file from a ReadableStream to the ZIP archive
-   * Supports large files by streaming data through AsyncZipDeflate
+   * Uses synchronous ZipDeflate (CF Workers don't support Web Workers)
    */
   async addFile(entry: ZipFileEntry): Promise<void> {
     if (this.fileCount >= ZIP_CONFIG.CHUNK_FILE_LIMIT) {
@@ -66,12 +66,13 @@ export class ZipStreamer {
       );
     }
 
-    const asyncDeflate = new AsyncZipDeflate(entry.filename, {
+    // Use synchronous ZipDeflate (AsyncZipDeflate requires Web Workers which CF doesn't have)
+    const deflate = new ZipDeflate(entry.filename, {
       level: ZIP_CONFIG.COMPRESSION_LEVEL,
       mtime: entry.mtime?.getTime(),
     });
 
-    this.zip.add(asyncDeflate);
+    this.zip.add(deflate);
 
     const reader = entry.data.getReader();
     let totalSize = 0;
@@ -88,22 +89,12 @@ export class ZipStreamer {
           );
         }
 
-        // Push data to the async deflate stream
-        await new Promise<void>((resolve, reject) => {
-          asyncDeflate.push(value, false, (error) => {
-            if (error) reject(error);
-            else resolve();
-          });
-        });
+        // Push data to the deflate stream (synchronous)
+        deflate.push(value, false);
       }
 
       // Finalize the file entry
-      await new Promise<void>((resolve, reject) => {
-        asyncDeflate.push(new Uint8Array(), true, (error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      });
+      deflate.push(new Uint8Array(), true);
 
       this.fileCount++;
     } finally {
