@@ -1153,5 +1153,8 @@ export default {
   }
 };
 
-// Export Durable Object class
+// Export Durable Object classes
+// ExportJobV2: Current implementation with SQLite storage
+// ExportJob: Legacy stub for migration (can be deleted after v5 migration)
+export { ExportJobV2 } from './services/ExportJobV2';
 export { ExportJob } from './services/ExportJob';

@@ -19,7 +19,7 @@ bucket_name = "grove-storage"  # Run: wrangler r2 bucket create grove-storage
 # Durable Objects
 [[durable_objects.bindings]]
 name = "EXPORT_JOBS"
-class_name = "ExportJob"
+class_name = "ExportJobV2"
 script_name = "amber-worker"
 
 # Migrations (required for first DO deployment)
@@ -37,11 +37,10 @@ tag = "v3"
 renamed_classes = []
 deleted_classes = []
 
-# v4: Enable SQLite storage for ExportJob (migrating from KV to SQL)
-# This enables state.storage.sql for persistent, reliable state management
+# v4: Create ExportJobV2 with SQLite storage (new class, keeping old for now)
 [[migrations]]
 tag = "v4"
-new_sqlite_classes = ["ExportJob"]
+new_sqlite_classes = ["ExportJobV2"]
 
 # Durable Objects observability (logs to CF dashboard)
 [observability.logs]

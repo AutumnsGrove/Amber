@@ -39,20 +39,38 @@ export class ZipStreamer {
   private outputStream: WritableStream<Uint8Array>;
   private writer: WritableStreamDefaultWriter<Uint8Array>;
   private fileCount: number = 0;
+  // Buffer chunks since fflate callback is synchronous but writes are async
+  private pendingChunks: Uint8Array[] = [];
+  private writeError: Error | null = null;
 
   constructor(outputStream: WritableStream<Uint8Array>) {
     this.outputStream = outputStream;
     this.writer = outputStream.getWriter();
 
-    // Initialize fflate Zip with callback to write chunks
-    this.zip = new Zip(async (error, data) => {
+    // Initialize fflate Zip with callback to buffer chunks (sync callback)
+    this.zip = new Zip((error, data, final) => {
       if (error) {
-        throw new Error(`ZIP compression error: ${error.message}`);
+        this.writeError = new Error(`ZIP compression error: ${error.message}`);
+        return;
       }
-      if (data) {
-        await this.writer.write(data);
+      if (data && data.length > 0) {
+        // Copy the data since fflate reuses the buffer
+        this.pendingChunks.push(new Uint8Array(data));
       }
     });
+  }
+
+  /**
+   * Flush all buffered chunks to the output stream
+   * Must be called periodically to prevent memory buildup
+   */
+  async flushChunks(): Promise<void> {
+    if (this.writeError) throw this.writeError;
+
+    while (this.pendingChunks.length > 0) {
+      const chunk = this.pendingChunks.shift()!;
+      await this.writer.write(chunk);
+    }
   }
 
   /**
@@ -89,12 +107,20 @@ export class ZipStreamer {
           );
         }
 
-        // Push data to the deflate stream (synchronous)
+        // Push data to the deflate stream (synchronous - buffers to pendingChunks)
         deflate.push(value, false);
+
+        // Flush buffered chunks periodically to prevent memory buildup
+        if (this.pendingChunks.length > 10) {
+          await this.flushChunks();
+        }
       }
 
       // Finalize the file entry
       deflate.push(new Uint8Array(), true);
+
+      // Flush any remaining chunks
+      await this.flushChunks();
 
       this.fileCount++;
     } finally {
@@ -124,6 +150,9 @@ export class ZipStreamer {
     passthrough.push(data);
     passthrough.push(new Uint8Array());
 
+    // Flush buffered chunks
+    await this.flushChunks();
+
     this.fileCount++;
   }
 
@@ -132,12 +161,14 @@ export class ZipStreamer {
    * Must be called after all files have been added
    */
   async close(): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      this.zip.end((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
+    // End the ZIP archive (triggers final central directory)
+    this.zip.end();
+
+    // Flush any remaining chunks
+    await this.flushChunks();
+
+    // Check for errors
+    if (this.writeError) throw this.writeError;
 
     await this.writer.close();
   }
