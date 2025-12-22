@@ -185,14 +185,14 @@ The following is implemented and ready:
 
 ### IMMEDIATE - Export System SQLite Migration (Dec 22, 2024)
 
-**Status:** Migrating from KV storage to SQLite storage based on Forage analysis.
+**Status:** ✅ Migration complete! Ready to deploy and test.
 
 **Problem Identified (Dec 22):**
 After analyzing the successful Forage project's Durable Object implementation, we identified
 the root cause of Amber's export reliability issues:
 
-| Issue | Amber (Broken) | Forage (Working) |
-|-------|----------------|------------------|
+| Issue | Amber (Before) | Amber (After - Fixed) |
+|-------|----------------|----------------------|
 | Storage | KV (`ctx.storage.put/get`) | SQLite (`state.storage.sql`) |
 | Migration | `new_classes` | `new_sqlite_classes` |
 | State | JSON blob (unreliable) | SQL tables (persistent) |
@@ -201,24 +201,24 @@ the root cause of Amber's export reliability issues:
 **Key Insight:** Forage uses `new_sqlite_classes` in wrangler.toml migrations, which enables
 the built-in SQLite storage. This makes state persistence rock-solid and alarms reliable.
 
-**Migration Plan:**
+**Migration Completed (Dec 22):**
 1. ✅ Analyzed Forage's DO pattern (cloned to /tmp/Forage)
-2. [ ] Add `new_sqlite_classes` migration to wrangler.toml
-3. [ ] Refactor ExportJob to use SQLite with proper schema:
+2. ✅ Added `new_sqlite_classes` migration (v4) to wrangler.toml
+3. ✅ Refactored ExportJob to use SQLite with proper schema:
    - `export_job` table for job metadata and status
    - `export_files` table for processed files
    - `export_missing` table for missing R2 files
-4. [ ] Re-enable alarm-based processing (now reliable with SQLite)
-5. [ ] Add observability config to wrangler.toml
+4. ✅ Re-enabled alarm-based processing (now reliable with SQLite)
+5. ✅ Added observability config to wrangler.toml
 6. [ ] Deploy and test
 
-**Forage Patterns to Adopt:**
-- `ensureSchema()` method to create SQL tables on first access
-- `getJob()` helper to query job state from SQL
-- `updateJobStatus()` for atomic status updates
-- `scheduleAlarm()` wrapper for consistent alarm scheduling
-- Status field in SQL prevents duplicate processing
-- Batch number tracking survives DO hibernation
+**Forage Patterns Adopted:**
+- ✅ `ensureSchema()` method to create SQL tables on first access
+- ✅ `getJob()` helper to query job state from SQL
+- ✅ `updateJobStatus()` for atomic status updates
+- ✅ `scheduleAlarm()` wrapper for consistent alarm scheduling
+- ✅ Status field in SQL prevents duplicate processing
+- ✅ Kept `process-sync` as fallback for cron-based processing
 
 **Previous Session Progress (Dec 21):**
 - ✅ Fixed critical `user_id` bug - `buildFileQuery()` was pushing empty string
