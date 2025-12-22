@@ -183,68 +183,42 @@ The following is implemented and ready:
 
 ## Next Steps
 
-### IMMEDIATE - Export System SQLite Migration (Dec 22, 2024)
+### Export System SQLite Migration (Dec 22, 2024) - ✅ COMPLETE
 
-**Status:** ✅ Migration complete! Ready to deploy and test.
+**Status:** ✅ Deployed and tested! Exports work end-to-end.
 
-**Problem Identified (Dec 22):**
-After analyzing the successful Forage project's Durable Object implementation, we identified
-the root cause of Amber's export reliability issues:
+**Test Results (Dec 22):**
+- Export ID: `3679ff28-8b14-48c0-9e4e-f84886c28043`
+- Status: `completed`
+- R2 Key: `exports/test-user-123/.../export.zip`
+- File Count: 2 files
+- Size: 434 bytes
 
-| Issue | Amber (Before) | Amber (After - Fixed) |
-|-------|----------------|----------------------|
-| Storage | KV (`ctx.storage.put/get`) | SQLite (`state.storage.sql`) |
-| Migration | `new_classes` | `new_sqlite_classes` |
-| State | JSON blob (unreliable) | SQL tables (persistent) |
-| Alarms | Marked deprecated | Fully functional |
+**Issues Fixed (Dec 22):**
+1. ✅ **DO Migration** - Created `ExportJobV2` with `implements DurableObject` pattern (from GroveDomainTool)
+2. ✅ **SQLite Storage** - Uses `state.storage.sql` for persistent state
+3. ✅ **ZipStreamer Deadlock** - fflate callback was sync but doing async writes; now buffers and flushes properly
+4. ✅ **Stream Concurrency** - TransformStream read/write now run concurrently via Promise.all
+5. ✅ **Legacy Compat** - Stub `ExportJob` class for migration compatibility
 
-**Key Insight:** Forage uses `new_sqlite_classes` in wrangler.toml migrations, which enables
-the built-in SQLite storage. This makes state persistence rock-solid and alarms reliable.
+**Architecture:**
+- `ExportJobV2` - New DO with SQLite storage
+- `ExportJob` - Legacy stub (deprecated)
+- Migration v4 uses `new_sqlite_classes = ["ExportJobV2"]`
 
-**Migration Completed (Dec 22):**
-1. ✅ Analyzed Forage's DO pattern (cloned to /tmp/Forage)
-2. ✅ Added `new_sqlite_classes` migration (v4) to wrangler.toml
-3. ✅ Refactored ExportJob to use SQLite with proper schema:
-   - `export_job` table for job metadata and status
-   - `export_files` table for processed files
-   - `export_missing` table for missing R2 files
-4. ✅ Re-enabled alarm-based processing (now reliable with SQLite)
-5. ✅ Added observability config to wrangler.toml
-6. [ ] Deploy and test
-
-**Forage Patterns Adopted:**
-- ✅ `ensureSchema()` method to create SQL tables on first access
-- ✅ `getJob()` helper to query job state from SQL
-- ✅ `updateJobStatus()` for atomic status updates
-- ✅ `scheduleAlarm()` wrapper for consistent alarm scheduling
-- ✅ Status field in SQL prevents duplicate processing
-- ✅ Kept `process-sync` as fallback for cron-based processing
-
-**Previous Session Progress (Dec 21):**
-- ✅ Fixed critical `user_id` bug - `buildFileQuery()` was pushing empty string
-- ✅ Fixed fflate Web Workers issue - Switched to synchronous `ZipDeflate`
-- ✅ Fixed stream deadlock - Moved reader initialization after zip close
-- ✅ Implemented R2 multipart upload - Handles 50GB+ exports with 5MB chunks
-- ✅ Added DO reset endpoint (`?action=reset`) for clearing stale state
-- ✅ Added synchronous processing (`?action=process-sync`) for DO
-- ✅ Set up cron fallback - Every 5 min processes pending/stuck exports
-
-**Testing Commands (after migration):**
+**Testing Commands:**
 ```bash
-# Deploy with new SQLite migration
-cd worker && npx wrangler deploy
-
-# Clear test exports
-npx wrangler d1 execute amber --remote --command \
-  "DELETE FROM storage_exports WHERE user_id = 'test-user-123'"
-
 # Create export
 curl -X POST https://amber-worker.m7jv4v7npb.workers.dev/api/storage/export \
   -H "X-Test-User-ID: test-user-123" \
   -H "Content-Type: application/json" \
   -d '{"type":"full"}'
 
-# Check export status
+# Trigger processing
+curl -X POST https://amber-worker.m7jv4v7npb.workers.dev/api/storage/export/trigger-cron \
+  -H "X-Test-User-ID: test-user-123"
+
+# Check status
 npx wrangler d1 execute amber --remote --command \
   "SELECT id, status, r2_key, file_count, size_bytes FROM storage_exports ORDER BY created_at DESC LIMIT 1"
 ```
