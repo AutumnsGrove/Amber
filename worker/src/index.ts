@@ -2,64 +2,34 @@
  * Amber Cloudflare Worker
  * API endpoints for storage management
  *
- * Uses GroveAuth client for authentication
+ * Uses Better Auth for session-based authentication
  */
-
-// Import directly from groveauth dist files (avoids Svelte bundling issues)
-import { createGroveAuthClient } from '../../node_modules/@autumnsgrove/groveengine/dist/groveauth/client.js';
 
 export interface Env {
   DB: D1Database;
   R2_BUCKET: R2Bucket;
   EXPORT_JOBS: DurableObjectNamespace;
-  // GroveAuth (Heartwood) credentials
-  GROVEAUTH_CLIENT_ID?: string;
-  GROVEAUTH_CLIENT_SECRET?: string;
-  GROVEAUTH_AUTH_BASE_URL?: string;
-  GROVEAUTH_REDIRECT_URI?: string;
+  // Better Auth configuration
+  BETTER_AUTH_BASE_URL?: string;
   // CORS
   ALLOWED_ORIGINS?: string;
   // Stripe (deferred)
   STRIPE_SECRET_KEY?: string;
 }
 
-/**
- * Create a GroveAuth client instance from environment variables.
- * Memoized per env (client reused across requests).
- */
-function getGroveAuthClient(env: Env) {
-  const clientId = env.GROVEAUTH_CLIENT_ID || 'amber';
-  const clientSecret = env.GROVEAUTH_CLIENT_SECRET;
-  const authBaseUrl = env.GROVEAUTH_AUTH_BASE_URL || 'https://auth-api.grove.place';
-  const redirectUri = env.GROVEAUTH_REDIRECT_URI || 'https://amber.grove.place/auth/callback';
-
-  if (!clientSecret) {
-    throw new Error('GROVEAUTH_CLIENT_SECRET environment variable is required');
-  }
-
-  return createGroveAuthClient({
-    clientId,
-    clientSecret,
-    authBaseUrl,
-    redirectUri,
-  });
-}
-
 // Subscription tier type
 type SubscriptionTier = 'seedling' | 'sapling' | 'oak' | 'evergreen';
 
-// Token verification response from GroveAuth
-interface TokenInfo {
-  active: boolean;
-  sub?: string;
-  email?: string;
-  name?: string;
-}
-
-// Subscription response from GroveAuth
-interface SubscriptionResponse {
-  subscription: {
-    tier: SubscriptionTier;
+// Better Auth session response
+interface BetterAuthSession {
+  user: {
+    id: string;
+    email: string;
+    name?: string;
+  };
+  session: {
+    id: string;
+    expiresAt: string;
   };
 }
 
@@ -149,7 +119,7 @@ function getCorsHeaders(request: Request, env: Env): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': isAllowed ? origin : allowedOrigins[0],
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cookie',
     'Access-Control-Allow-Credentials': 'true'
   };
 }
@@ -251,7 +221,7 @@ async function handleRequest(
   return error('Not found', 404);
 }
 
-// Auth middleware - validates token with Heartwood/GroveAuth
+// Auth middleware - validates session with Better Auth
 async function getAuthUser(
   request: Request,
   env: Env
@@ -266,33 +236,40 @@ async function getAuthUser(
     };
   }
 
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
+  // Get session cookie from request
+  const cookieHeader = request.headers.get('Cookie');
+  if (!cookieHeader) {
     return null;
   }
 
-  const token = authHeader.slice(7);
-
   try {
-    const client = getGroveAuthClient(env);
-    const tokenInfo = await client.verifyToken(token);
-    if (!tokenInfo?.active || !tokenInfo.sub) {
+    const authBaseUrl = env.BETTER_AUTH_BASE_URL || 'https://auth-api.grove.place';
+
+    // Forward cookies to Better Auth session endpoint
+    const sessionResponse = await fetch(`${authBaseUrl}/api/auth/session`, {
+      headers: {
+        'Cookie': cookieHeader
+      }
+    });
+
+    if (!sessionResponse.ok) {
       return null;
     }
 
-    // Get user's subscription to determine their tier
-    let subscription;
-    try {
-      subscription = await client.getSubscription(token);
-    } catch (err) {
-      // Default to seedling if subscription check fails
-      console.warn('Subscription check failed, defaulting to seedling:', err);
-      return { id: tokenInfo.sub, tier: 'seedling' };
+    const sessionData = await sessionResponse.json() as BetterAuthSession;
+
+    if (!sessionData.user?.id) {
+      return null;
     }
 
+    // TODO: Get user's subscription tier from subscription service
+    // For now, default to seedling
+    // In production, this should call a subscription API to get the tier
+    const tier: SubscriptionTier = 'seedling';
+
     return {
-      id: tokenInfo.sub,
-      tier: subscription.subscription.tier
+      id: sessionData.user.id,
+      tier
     };
   } catch (err) {
     console.error('Auth validation error:', err);
