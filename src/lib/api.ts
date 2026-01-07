@@ -13,14 +13,6 @@ const WORKER_API_BASE = 'https://amber-api.grove.place/api/storage';
 // Set to true to force mock data for testing
 const USE_MOCK_DATA = browser && import.meta.env.DEV;
 
-// Get auth token from wherever it's stored (cookie, localStorage, etc.)
-function getAuthToken(): string | null {
-  if (!browser) return null;
-  // TODO: Integrate with actual auth flow
-  // For now, check for token in localStorage or cookie
-  return localStorage.getItem('grove_access_token');
-}
-
 interface ApiResponse<T> {
   data?: T;
   error?: string;
@@ -31,20 +23,15 @@ async function request<T>(
   options?: RequestInit
 ): Promise<ApiResponse<T>> {
   try {
-    const token = getAuthToken();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...options?.headers as Record<string, string>
     };
 
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
     const response = await fetch(`${WORKER_API_BASE}${path}`, {
       ...options,
       headers,
-      credentials: 'include'
+      credentials: 'include' // Required for cross-origin cookies
     });
 
     const data = await response.json();

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from '$lib/components/Icons.svelte';
 	import { theme, currentUser } from '$lib/stores';
+	import { signOut } from '$lib/auth';
 
 	function toggleTheme() {
 		theme.update((t) => {
@@ -10,6 +11,12 @@
 			}
 			return newTheme;
 		});
+	}
+
+	function handleSignOut() {
+		if (confirm('Are you sure you want to sign out?')) {
+			signOut();
+		}
 	}
 </script>
 
@@ -37,6 +44,18 @@
 					</div>
 				</div>
 				<button class="btn btn-secondary">Edit Profile</button>
+			</div>
+		</div>
+		<div class="settings-card">
+			<div class="setting-row">
+				<div class="setting-info">
+					<Icon name="log-out" size={20} />
+					<div>
+						<span class="setting-label">Sign Out</span>
+						<span class="setting-description">Sign out of your account</span>
+					</div>
+				</div>
+				<button class="btn btn-secondary" onclick={handleSignOut}>Sign Out</button>
 			</div>
 		</div>
 	</section>
