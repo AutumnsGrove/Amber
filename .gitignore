@@ -40,6 +40,9 @@ __pycache__/
 # Claude Code
 .claude/
 
+# BaseProject backups
+.baseproject-backup-*/
+
 # Test coverage
 coverage/
 .nyc_output/
